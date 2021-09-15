@@ -111,7 +111,7 @@ xray:
         local:
           requiredServiceTypes: 'jfxr,jfxana,jfxidx,jfxpst'
       serviceRegistry:
-        insecure: "{{ .Values.router.serviceRegistry.insecure }}"
+        insecure: {{ .Values.router.serviceRegistry.insecure }}
     shared:
       logging:
         consoleLog:
@@ -124,8 +124,8 @@ xray:
         username: "{{ .Values.postgresql.postgresqlUsername }}"
         url: "postgres://{{ .Release.Name }}-postgresql:{{ .Values.postgresql.service.port }}/{{ .Values.postgresql.postgresqlDatabase }}?sslmode=disable"
       {{- else }}
-        type: {{ .Values.database.type }}
-        driver: {{ .Values.database.driver }}
+        type: "{{ .Values.database.type }}"
+        driver: "{{ .Values.database.driver }}"
       {{- end }}
       {{- if and (not .Values.rabbitmq.enabled) (not .Values.common.rabbitmq.connectionConfigFromEnvironment) }}
       rabbitMq:

@@ -64,9 +64,11 @@ spec:
 {{- include "xray.imagePullSecrets" . | indent 6 }}
     {{- end }}
       serviceAccountName: {{ template "xray.serviceAccountName" . }}
+      {{- if .Values.xray.setSecurityContext }}
       securityContext:
         runAsUser: {{ .Values.common.xrayUserId }}
         fsGroup: {{ .Values.common.xrayGroupId }}
+      {{- end }}
       initContainers:
     {{- if or .Values.common.customInitContainersBegin .Values.global.customInitContainersBegin }}
 {{ tpl (include "xray.customInitContainersBegin" .) . | indent 6 }}
@@ -175,10 +177,12 @@ spec:
       - name: {{ .Values.router.name }}
         image: {{ include "xray.getImageInfoByValue" (list . "router") }}
         imagePullPolicy: {{ .Values.router.image.imagePullPolicy }}
+        {{- if .Values.xray.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.xrayUserId }}
           allowPrivilegeEscalation: false
+        {{- end }}
         command:
           - '/bin/sh'
           - '-c'
@@ -217,10 +221,12 @@ spec:
       - name: {{ .Values.server.name }}
         image: {{ include "xray.getImageInfoByValue" (list . "server") }}
         imagePullPolicy: {{ .Values.imagePullPolicy }}
+        {{- if .Values.xray.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.xrayUserId }}
           allowPrivilegeEscalation: false
+        {{- end }}
         command:
           - '/bin/bash'
           - '-c'
@@ -343,10 +349,12 @@ spec:
       - name: {{ .Values.analysis.name }}
         image: {{ include "xray.getImageInfoByValue" (list . "analysis") }}
         imagePullPolicy: {{ .Values.imagePullPolicy }}
+        {{- if .Values.xray.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.xrayUserId }}
           allowPrivilegeEscalation: false
+          {{- end }}
         command:
           - '/bin/bash'
           - '-c'
@@ -475,10 +483,12 @@ spec:
       - name: {{ .Values.indexer.name }}
         image: {{ include "xray.getImageInfoByValue" (list . "indexer") }}
         imagePullPolicy: {{ .Values.imagePullPolicy }}
+        {{- if .Values.xray.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.xrayUserId }}
           allowPrivilegeEscalation: false
+        {{- end }}
         command:
           - '/bin/bash'
           - '-c'
@@ -607,10 +617,12 @@ spec:
       - name: {{ .Values.persist.name }}
         image: {{ include "xray.getImageInfoByValue" (list . "persist") }}
         imagePullPolicy: {{ .Values.imagePullPolicy }}
+        {{- if .Values.xray.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.xrayUserId }}
           allowPrivilegeEscalation: false
+        {{- end }}
         command:
           - '/bin/bash'
           - '-c'
