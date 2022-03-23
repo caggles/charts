@@ -4,6 +4,9 @@ metadata:
   name: {{ include "pipelines.services.name" . }}
   labels:
     {{- include "pipelines.labels" . | nindent 4 }}
+    {{- with .Values.pipelines.labels }}
+{{ toYaml . | indent 4 }}
+    {{- end }}
 spec:
   serviceName: {{ include "pipelines.services.name" . }}-headless
 {{- if not .Values.pipelines.autoscaling.enabled }}
@@ -28,22 +31,28 @@ spec:
         checksum/secretk8s: {{ include (print $.Template.BasePath "/buildplane-secret-k8s.yaml") . | sha256sum }}
         checksum/configk8s: {{ include (print $.Template.BasePath "/buildplane-config-k8s.yaml") . | sha256sum }}
         checksum/configfilebeat: {{ include (print $.Template.BasePath "/filebeat-config.yaml") . | sha256sum }}
+      {{- range $key, $value := .Values.pipelines.annotations }}
+        {{ $key }}: {{ $value | quote }}
+      {{- end }}
     spec:
-      serviceAccountName: {{ include "pipelines.fullname" . }}
+      serviceAccountName: {{ template "pipelines.serviceAccountName" . }}
     {{- if or .Values.imagePullSecrets .Values.global.imagePullSecrets }}
 {{- include "pipelines.imagePullSecrets" . | nindent 6 }}
     {{- end }}
       initContainers:
-        {{- with .Values.pipelines.customInitContainersBegin }}
-        {{- tpl . $ | nindent 8 }}
-        {{- end }}
+          {{- if or .Values.pipelines.customInitContainersBegin .Values.global.customInitContainersBegin }}
+{{ tpl (include "pipelines.customInitContainersBegin" .)  . | indent 8 }}
+          {{- end }}
         - name: copy-system-yaml
           image: "{{ .Values.initContainer.image }}"
           imagePullPolicy: {{ .Values.initContainer.pullPolicy }}
-          resources:
-{{ toYaml .Values.initContainers.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
+          resources:
+{{ toYaml .Values.initContainers.resources | nindent 12 }}
           command:
           - '/bin/sh'
           - '-c'
@@ -71,10 +80,13 @@ spec:
         - name: copy-custom-certificates
           image: "{{ .Values.initContainer.image }}"
           imagePullPolicy: {{ .Values.initContainer.pullPolicy }}
-          resources:
-{{ toYaml .Values.initContainers.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
+          resources:
+{{ toYaml .Values.initContainers.resources | nindent 12 }}
           command:
           - '/bin/sh'
           - '-c'
@@ -86,13 +98,72 @@ spec:
           - name: ca-certs
             mountPath: "/tmp/certs"
       {{- end }}
-        - name: wait-for-vault
-          image: "{{ .Values.initContainer.image }}"
+{{- if .Values.vault.enabled }}
+        - name: wait-for-db
+          image: '{{ .Values.initContainer.image }}'
           imagePullPolicy: {{ .Values.initContainer.pullPolicy }}
           resources:
 {{ toYaml .Values.initContainers.resources | nindent 12 }}
+          command:
+          - 'sh'
+          - '-c'
+          - >
+            echo "Waiting for Postgres to come up...";
+            {{- if .Values.postgresql.enabled }}
+            until nc -z -w 2 {{ .Release.Name }}-postgresql {{ .Values.postgresql.service.port }} && echo database ok; do
+            {{- else }}
+            until nc -z -w 2 {{ tpl .Values.global.postgresql.host . }} {{ .Values.global.postgresql.port }} && echo database ok; do
+            {{- end }}
+              sleep 2;
+            done;
+            sleep 10;
+        - name: create-vault-table
+          image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "pipelinesInit" ) }}
+          imagePullPolicy: {{ .Values.pipelines.pipelinesInit.image.pullPolicy }}
+          resources:
+{{ toYaml .Values.initContainers.resources | nindent 12 }}
+          env:
+            - name: PIPELINES_SHARED_DB_CONNECTIONSTRING
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.postgresql.existingSecret | default (printf "%s-%s" (include "pipelines.fullname" .) "database") }}
+                  key: postgresql-url
+          command:
+          - 'sh'
+          - '-c'
+          - >
+            echo "Copy system.yaml to {{ .Values.pipelines.mountPath }}";
+            {{- if .Values.systemYamlOverride.existingSecret }}
+            cp -fv /tmp/etc/{{ .Values.systemYamlOverride.dataKey }} {{ .Values.pipelines.mountPath }}/system.yaml;
+            {{- else }}
+            cp -fv /tmp/etc/system.yaml {{ .Values.pipelines.mountPath }}/system.yaml;
+            {{- end }}
+            echo "Creating Vault Table...";
+            ./pipelines-k8s initVault;
+          volumeMounts:
+          - name: jfrog-pipelines-folder
+            mountPath: {{ .Values.pipelines.mountPath }}
+        {{- if or .Values.systemYamlOverride.existingSecret .Values.pipelines.systemYaml }}
+          - name: systemyaml
+            {{- if .Values.systemYamlOverride.existingSecret }}
+            mountPath: "/tmp/etc/{{.Values.systemYamlOverride.dataKey}}"
+            subPath: {{ .Values.systemYamlOverride.dataKey }}
+            {{- else if .Values.pipelines.systemYaml }}
+            mountPath: "/tmp/etc/system.yaml"
+            subPath: system.yaml
+            {{- end }}
+        {{- end }}
+{{- end }}
+        - name: wait-for-vault
+          image: "{{ .Values.initContainer.image }}"
+          imagePullPolicy: {{ .Values.initContainer.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
+          resources:
+{{ toYaml .Values.initContainers.resources | nindent 12 }}
           {{- if not .Values.vault.enabled }}
           env:
             - name: VAULT_TOKEN
@@ -107,7 +178,11 @@ spec:
           - >
             echo "Waiting for Vault to come up...";
             {{- if .Values.vault.enabled }}
-            until nc -z -w 2 {{ include "pipelines.vault.name" . }} {{ .Values.vault.service.port }} && echo Vault ok; do
+            {{- if .Values.vault.server.ha.enabled }}
+            until nc -z -w 2 {{ .Release.Name }}-vault-active {{ .Values.vault.server.service.port }} && echo Vault ok; do
+            {{- else }}
+            until nc -z -w 2 {{ .Release.Name }}-vault {{ .Values.vault.server.service.port }} && echo Vault ok; do
+            {{- end }}
               sleep 2;
             done;
             {{- else }}
@@ -130,13 +205,15 @@ spec:
         - name: pipelines-installer
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "pipelinesInit" ) }}
           imagePullPolicy: {{ .Values.pipelines.pipelinesInit.image.pullPolicy }}
-          resources:
-{{ toYaml .Values.initContainers.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               add:
                 - CHOWN
+              drop:
+                - NET_RAW
+          resources:
+{{ toYaml .Values.initContainers.resources | nindent 12 }}
           env:
             - name: VAULT_TOKEN
               valueFrom:
@@ -152,14 +229,14 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: "metadata.name"
-            {{- if or .Values.pipelines.masterKeySecretName .Values.global.masterKeySecretName }}
+            {{- if or .Values.pipelines.masterKey .Values.global.masterKey .Values.pipelines.masterKeySecretName .Values.global.masterKeySecretName }}
             - name: PIPELINES_MASTER_KEY
               valueFrom:
                 secretKeyRef:
                   name: "{{ include "pipelines.masterKeySecretName" . }}"
                   key: master-key
             {{- end }}
-            {{- if or .Values.pipelines.joinKeySecretName .Values.global.joinKeySecretName }}
+            {{- if or .Values.pipelines.joinKey .Values.global.joinKey .Values.pipelines.joinKeySecretName .Values.global.joinKeySecretName }}
             - name: PIPELINES_JOIN_KEY
               valueFrom:
                 secretKeyRef:
@@ -182,16 +259,12 @@ spec:
               sleep 2;
             done;
           {{- end }}
-          {{- if (not .Values.vault.enabled) }}
-            echo "Creating Vault Table...";
-            ./pipelines-k8s initVault;
-          {{- end }}
-          {{- if or .Values.pipelines.masterKeySecretName .Values.global.masterKeySecretName }}
+          {{- if or .Values.pipelines.masterKey .Values.global.masterKey .Values.pipelines.masterKeySecretName .Values.global.masterKeySecretName }}
             echo "Copy masterKey to {{ .Values.pipelines.mountPath }}/security";
             mkdir -p {{ .Values.pipelines.mountPath }}/security;
             echo -n ${PIPELINES_MASTER_KEY} > {{ .Values.pipelines.mountPath }}/security/master.key;
           {{- end }}
-          {{- if or .Values.pipelines.joinKeySecretName .Values.global.masterKeySecretName }}
+          {{- if or .Values.pipelines.joinKey .Values.global.joinKey .Values.pipelines.joinKeySecretName .Values.global.joinKeySecretName }}
             echo "Copy joinKey to {{ .Values.pipelines.mountPath }}/security";
             mkdir -p {{ .Values.pipelines.mountPath }}/security;
             echo -n ${PIPELINES_JOIN_KEY} > {{ .Values.pipelines.mountPath }}/security/join.key;
@@ -201,6 +274,8 @@ spec:
           volumeMounts:
           - name: jfrog-pipelines-folder
             mountPath: {{ .Values.pipelines.mountPath }}
+          - name: jfrog-pipelines-logs
+            mountPath: {{ .Values.pipelines.logPath }}
           {{- if .Values.buildPlane.dynamic.provider.aws.enabled }}
           - name: buildplane-creds-aws
             mountPath: {{ .Values.pipelines.mountPath }}/buildplane-creds
@@ -217,9 +292,9 @@ spec:
             mountPath: {{ .Values.pipelines.mountPath }}/buildplane-config
             readOnly: true
           {{- end }}
-        {{- with .Values.pipelines.customInitContainers }}
-        {{- tpl . $ | nindent 8 }}
-        {{- end }}
+          {{- if or .Values.pipelines.customInitContainers .Values.global.customInitContainers }}
+{{ tpl (include "pipelines.customInitContainers" .)  . | indent 8 }}
+          {{- end }}
       {{- if .Values.hostAliases }}
       hostAliases:
 {{ toYaml .Values.hostAliases | indent 6 }}
@@ -229,12 +304,15 @@ spec:
         - name: {{ .Values.filebeat.name }}
           image: "{{ .Values.filebeat.image.repository }}:{{ .Values.filebeat.image.version }}"
           imagePullPolicy: {{ .Values.filebeat.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           args:
           - "-e"
           - "-E"
           - "http.enabled=true"
-          securityContext:
-            runAsUser: 0
           resources:
             {{ toYaml .Values.filebeat.resources | nindent 12 }}
           volumeMounts:
@@ -248,13 +326,18 @@ spec:
         - name: router
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "router" ) }}
           imagePullPolicy: {{ .Values.pipelines.router.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           env:
+            - name: JF_ROUTER_TOPOLOGY_LOCAL_REQUIREDSERVICETYPES
+              value: {{ include "pipelines.router.requiredServiceTypes" . }}
           {{- if not .Values.router.routerConfiguration }}
             - name: JF_ROUTER_SERVICEREGISTRY_URL
               value: "{{ tpl (include "pipelines.jfrogUrl" .) . }}/access"
           {{- end }}
-            - name: ROUTER_TOPOLOGY_LOCAL_REQUIREDSERVICETYPES
-              value: 'jfpip'
             - name: JF_ROUTER_SERVICEREGISTRY_GRPCADDRESS
               value: "{{ include "pipelines.grpc.url" . }}"
             - name: JF_ROUTER_ENTRYPOINTS_INTERNALPORT
@@ -296,43 +379,24 @@ spec:
             mountPath: {{ .Values.pipelines.router.appStatePath | quote }}
           {{- if .Values.pipelines.router.startupProbe.enabled }}
           startupProbe:
-            httpGet:
-              path: {{ .Values.pipelines.router.startupProbe.path}}
-              port: {{  .Values.pipelines.router.externalPort}}
-            initialDelaySeconds: {{ .Values.pipelines.router.startupProbe.initialDelaySeconds }}
-            periodSeconds: {{ .Values.pipelines.router.startupProbe.timeoutSeconds }}
-            failureThreshold: {{ .Values.pipelines.router.startupProbe.failureThreshold }}
-            timeoutSeconds: {{ .Values.pipelines.router.startupProbe.timeoutSeconds }}
+{{ tpl .Values.pipelines.router.startupProbe.config . | indent 12 }}
           {{- end }}
           {{- if .Values.pipelines.router.livenessProbe.enabled }}
           livenessProbe:
-            httpGet:
-              path: {{ .Values.pipelines.router.livenessProbe.path}}
-              port: {{  .Values.pipelines.router.externalPort}}
-            {{- if semverCompare "<v1.18.0-0" .Capabilities.KubeVersion.Version }}
-            initialDelaySeconds: {{ .Values.pipelines.router.livenessProbe.initialDelaySeconds  }}
-            {{- end }}
-            timeoutSeconds: {{  .Values.pipelines.router.livenessProbe.timeoutSeconds }}
-            periodSeconds: {{ .Values.pipelines.router.livenessProbe.timeoutSeconds }}
-            failureThreshold: {{ .Values.pipelines.router.livenessProbe.failureThreshold }}
-            successThreshold: {{ .Values.pipelines.router.livenessProbe.successThreshold }}
+{{ tpl .Values.pipelines.router.livenessProbe.config . | indent 12 }}
           {{- end }}
           {{- if .Values.pipelines.router.readinessProbe.enabled }}
           readinessProbe:
-            httpGet:
-              path: {{ .Values.pipelines.router.readinessProbe.path}}
-              port: {{ .Values.pipelines.router.externalPort }}
-            {{- if semverCompare "<v1.18.0-0" .Capabilities.KubeVersion.Version }}
-            initialDelaySeconds: {{ .Values.pipelines.router.readinessProbe.initialDelaySeconds  }}
-            {{- end }}
-            timeoutSeconds: {{ .Values.pipelines.router.readinessProbe.timeoutSeconds }}
-            periodSeconds: {{ .Values.pipelines.router.readinessProbe.timeoutSeconds }}
-            failureThreshold: {{ .Values.pipelines.router.readinessProbe.failureThreshold }}
-            successThreshold: {{ .Values.pipelines.router.readinessProbe.successThreshold }}
+{{ tpl .Values.pipelines.router.readinessProbe.config . | indent 12 }}
         {{- end }}
         - name: api
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "api" ) }}
           imagePullPolicy: {{ .Values.pipelines.api.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           env:
             - name: PIPELINES_NODE_ID
               valueFrom:
@@ -348,42 +412,17 @@ spec:
           ports:
             - name: http-api
               containerPort: 30000
-
           {{- if .Values.pipelines.api.livenessProbe.enabled }}
           livenessProbe:
-            httpGet:
-              path: {{ .Values.pipelines.api.livenessProbe.path}}
-              port: {{  .Values.pipelines.api.livenessProbe.port}}
-            {{- if semverCompare "<v1.18.0-0" .Capabilities.KubeVersion.Version }}
-            initialDelaySeconds: {{ .Values.pipelines.api.livenessProbe.initialDelaySeconds  }}
-            {{- end }}
-            timeoutSeconds: {{  .Values.pipelines.api.livenessProbe.timeoutSeconds }}
-            periodSeconds: {{ .Values.pipelines.api.livenessProbe.timeoutSeconds }}
-            failureThreshold: {{ .Values.pipelines.api.livenessProbe.failureThreshold }}
-            successThreshold: {{ .Values.pipelines.api.livenessProbe.successThreshold }}
+{{ tpl .Values.pipelines.api.livenessProbe.config . | indent 12 }}
           {{- end }}
           {{- if .Values.pipelines.api.readinessProbe.enabled }}
           readinessProbe:
-            httpGet:
-              path: {{ .Values.pipelines.api.readinessProbe.path}}
-              port: {{ .Values.pipelines.api.readinessProbe.port}}
-            {{- if semverCompare "<v1.18.0-0" .Capabilities.KubeVersion.Version }}
-            initialDelaySeconds: {{ .Values.pipelines.api.readinessProbe.initialDelaySeconds  }}
-            {{- end }}
-            timeoutSeconds: {{ .Values.pipelines.api.readinessProbe.timeoutSeconds }}
-            periodSeconds: {{ .Values.pipelines.api.readinessProbe.timeoutSeconds }}
-            failureThreshold: {{ .Values.pipelines.api.readinessProbe.failureThreshold }}
-            successThreshold: {{ .Values.pipelines.api.readinessProbe.successThreshold }}
+{{ tpl .Values.pipelines.api.readinessProbe.config . | indent 12 }}
           {{- end }}
           {{- if .Values.pipelines.api.startupProbe.enabled }}
           startupProbe:
-            httpGet:
-              path: {{ .Values.pipelines.api.startupProbe.path}}
-              port: {{  .Values.pipelines.api.startupProbe.port}}
-            initialDelaySeconds: {{ .Values.pipelines.api.startupProbe.initialDelaySeconds }}
-            periodSeconds: {{ .Values.pipelines.api.startupProbe.timeoutSeconds }}
-            failureThreshold: {{ .Values.pipelines.api.startupProbe.failureThreshold }}
-            timeoutSeconds: {{ .Values.pipelines.api.startupProbe.timeoutSeconds }}
+{{ tpl .Values.pipelines.api.startupProbe.config . | indent 12 }}
           {{- end }}
           resources:
             {{- toYaml .Values.pipelines.api.resources | nindent 12 }}
@@ -402,11 +441,20 @@ spec:
         - name: www
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "www" ) }}
           imagePullPolicy: {{ .Values.pipelines.www.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           env:
             {{- if or .Values.pipelines.customCertificates.enabled .Values.global.customCertificates.enabled }}
             - name: NODE_EXTRA_CA_CERTS
               value: "{{ .Values.pipelines.mountPath }}/security/keys/trusted/pipelines_custom_certs.crt"
             {{- end }}
+            - name: PIPELINES_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: "metadata.name"
 {{- if .Values.pipelines.extraEnvironmentVariables }}
 {{- with .Values.pipelines.extraEnvironmentVariables }}
 {{ tpl (toYaml .) $ | indent 12 }}
@@ -417,29 +465,11 @@ spec:
               containerPort: 30001
           {{- if .Values.pipelines.www.livenessProbe.enabled }}
           livenessProbe:
-            httpGet:
-              path: {{ .Values.pipelines.www.livenessProbe.path}}
-              port: {{ .Values.pipelines.www.livenessProbe.port}}
-            {{- if semverCompare "<v1.18.0-0" .Capabilities.KubeVersion.Version }}
-            initialDelaySeconds: {{ .Values.pipelines.www.livenessProbe.initialDelaySeconds  }}
-            {{- end }}
-            timeoutSeconds: {{ .Values.pipelines.www.livenessProbe.timeoutSeconds }}
-            periodSeconds: {{ .Values.pipelines.www.livenessProbe.timeoutSeconds }}
-            failureThreshold: {{ .Values.pipelines.www.livenessProbe.failureThreshold }}
-            successThreshold: {{ .Values.pipelines.www.livenessProbe.successThreshold }}
+{{ tpl .Values.pipelines.www.livenessProbe.config . | indent 12 }}
           {{- end }}
           {{- if .Values.pipelines.www.readinessProbe.enabled }}
           readinessProbe:
-            httpGet:
-              path: {{ .Values.pipelines.www.readinessProbe.path}}
-              port: {{ .Values.pipelines.www.readinessProbe.port}}
-            {{- if semverCompare "<v1.18.0-0" .Capabilities.KubeVersion.Version }}
-            initialDelaySeconds: {{ .Values.pipelines.www.readinessProbe.initialDelaySeconds  }}
-            {{- end }}
-            timeoutSeconds: {{ .Values.pipelines.www.readinessProbe.timeoutSeconds }}
-            periodSeconds: {{ .Values.pipelines.www.readinessProbe.timeoutSeconds }}
-            failureThreshold: {{ .Values.pipelines.www.readinessProbe.failureThreshold }}
-            successThreshold: {{ .Values.pipelines.www.readinessProbe.successThreshold }}
+{{ tpl .Values.pipelines.www.readinessProbe.config . | indent 12 }}
           {{- end }}
           resources:
             {{- toYaml .Values.pipelines.www.resources | nindent 12 }}
@@ -454,10 +484,19 @@ spec:
         - name: pipelinesync
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "pipelineSync" ) }}
           imagePullPolicy: {{ .Values.pipelines.pipelineSync.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           workingDir: /opt/jfrog/pipelines/app/micro/pipelineSync
           env:
             - name: COMPONENT
               value: pipelinesync
+            - name: PIPELINES_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: "metadata.name"
             {{- if or .Values.pipelines.customCertificates.enabled .Values.global.customCertificates.enabled }}
             - name: NODE_EXTRA_CA_CERTS
               value: "{{ .Values.pipelines.mountPath }}/security/keys/trusted/pipelines_custom_certs.crt"
@@ -475,10 +514,19 @@ spec:
         - name: runtrigger
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "runTrigger" ) }}
           imagePullPolicy: {{ .Values.pipelines.runTrigger.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           workingDir: /opt/jfrog/pipelines/app/micro/runTrigger
           env:
             - name: COMPONENT
               value: runtrigger
+            - name: PIPELINES_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: "metadata.name"
             {{- if or .Values.pipelines.customCertificates.enabled .Values.global.customCertificates.enabled }}
             - name: NODE_EXTRA_CA_CERTS
               value: "{{ .Values.pipelines.mountPath }}/security/keys/trusted/pipelines_custom_certs.crt"
@@ -496,10 +544,19 @@ spec:
         - name: steptrigger
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "stepTrigger" ) }}
           imagePullPolicy: {{ .Values.pipelines.stepTrigger.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           workingDir: /opt/jfrog/pipelines/app/micro/stepTrigger
           env:
             - name: COMPONENT
               value: steptrigger
+            - name: PIPELINES_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: "metadata.name"
             {{- if or .Values.pipelines.customCertificates.enabled .Values.global.customCertificates.enabled }}
             - name: NODE_EXTRA_CA_CERTS
               value: "{{ .Values.pipelines.mountPath }}/security/keys/trusted/pipelines_custom_certs.crt"
@@ -517,10 +574,19 @@ spec:
         - name: cron
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "cron" ) }}
           imagePullPolicy: {{ .Values.pipelines.cron.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           workingDir: /opt/jfrog/pipelines/app/micro/cron
           env:
             - name: COMPONENT
               value: cron
+            - name: PIPELINES_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: "metadata.name"
             {{- if or .Values.pipelines.customCertificates.enabled .Values.global.customCertificates.enabled }}
             - name: NODE_EXTRA_CA_CERTS
               value: "{{ .Values.pipelines.mountPath }}/security/keys/trusted/pipelines_custom_certs.crt"
@@ -539,10 +605,19 @@ spec:
         - name: nexec
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "nexec" ) }}
           imagePullPolicy: {{ .Values.pipelines.nexec.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           workingDir: /opt/jfrog/pipelines/app/micro/nexec
           env:
             - name: COMPONENT
               value: nexec
+            - name: PIPELINES_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: "metadata.name"
             {{- if or .Values.pipelines.customCertificates.enabled .Values.global.customCertificates.enabled }}
             - name: NODE_EXTRA_CA_CERTS
               value: "{{ .Values.pipelines.mountPath }}/security/keys/trusted/pipelines_custom_certs.crt"
@@ -561,10 +636,19 @@ spec:
         - name: hookhandler
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "hookHandler" ) }}
           imagePullPolicy: {{ .Values.pipelines.hookHandler.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           workingDir: /opt/jfrog/pipelines/app/micro/hookHandler
           env:
             - name: COMPONENT
               value: hookhandler
+            - name: PIPELINES_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: "metadata.name"
             {{- if or .Values.pipelines.customCertificates.enabled .Values.global.customCertificates.enabled }}
             - name: NODE_EXTRA_CA_CERTS
               value: "{{ .Values.pipelines.mountPath }}/security/keys/trusted/pipelines_custom_certs.crt"
@@ -582,10 +666,19 @@ spec:
         - name: marshaller
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "marshaller" ) }}
           imagePullPolicy: {{ .Values.pipelines.marshaller.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           workingDir: /opt/jfrog/pipelines/app/micro/marshaller
           env:
             - name: COMPONENT
               value: marshaller
+            - name: PIPELINES_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: "metadata.name"
             {{- if or .Values.pipelines.customCertificates.enabled .Values.global.customCertificates.enabled }}
             - name: NODE_EXTRA_CA_CERTS
               value: "{{ .Values.pipelines.mountPath }}/security/keys/trusted/pipelines_custom_certs.crt"
@@ -603,10 +696,19 @@ spec:
         - name: logup
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "logup" ) }}
           imagePullPolicy: {{ .Values.pipelines.logup.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           workingDir: /opt/jfrog/pipelines/app/micro/logup
           env:
             - name: COMPONENT
               value: logup
+            - name: PIPELINES_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: "metadata.name"
             {{- if or .Values.pipelines.customCertificates.enabled .Values.global.customCertificates.enabled }}
             - name: NODE_EXTRA_CA_CERTS
               value: "{{ .Values.pipelines.mountPath }}/security/keys/trusted/pipelines_custom_certs.crt"
@@ -624,10 +726,19 @@ spec:
         - name: extensionsync
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "extensionSync" ) }}
           imagePullPolicy: {{ .Values.pipelines.extensionSync.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           workingDir: /opt/jfrog/pipelines/app/micro/extensionSync
           env:
             - name: COMPONENT
               value: extensionsync
+            - name: PIPELINES_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: "metadata.name"
             {{- if or .Values.pipelines.customCertificates.enabled .Values.global.customCertificates.enabled }}
             - name: NODE_EXTRA_CA_CERTS
               value: "{{ .Values.pipelines.mountPath }}/security/keys/trusted/pipelines_custom_certs.crt"
@@ -645,10 +756,19 @@ spec:
         - name: reqsealer
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "reqSealer" ) }}
           imagePullPolicy: {{ .Values.pipelines.reqSealer.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           workingDir: /opt/jfrog/pipelines/app/micro/reqSealer
           env:
             - name: COMPONENT
               value: reqsealer
+            - name: PIPELINES_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: "metadata.name"
             {{- if or .Values.pipelines.customCertificates.enabled .Values.global.customCertificates.enabled }}
             - name: NODE_EXTRA_CA_CERTS
               value: "{{ .Values.pipelines.mountPath }}/security/keys/trusted/pipelines_custom_certs.crt"
@@ -666,10 +786,19 @@ spec:
         - name: templatesync
           image: {{ include "pipelines.getImageInfoByValue" (list . "pipelines" "templateSync" ) }}
           imagePullPolicy: {{ .Values.pipelines.templateSync.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
           workingDir: /opt/jfrog/pipelines/app/micro/templateSync
           env:
             - name: COMPONENT
               value: templatesync
+            - name: PIPELINES_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: "metadata.name"
             {{- if or .Values.pipelines.customCertificates.enabled .Values.global.customCertificates.enabled }}
             - name: NODE_EXTRA_CA_CERTS
               value: "{{ .Values.pipelines.mountPath }}/security/keys/trusted/pipelines_custom_certs.crt"
@@ -700,13 +829,13 @@ spec:
         {{- toYaml . | nindent 8 }}
     {{- end }}
       volumes:
+        {{- if or .Values.pipelines.customVolumes .Values.global.customVolumes }}
+{{ tpl (include "pipelines.customVolumes" .) . | indent 6 }}
+        {{- end }}
       {{- if or .Values.pipelines.customCertificates.enabled .Values.global.customCertificates.enabled }}
       - name: ca-certs
         secret:
           secretName: {{ default .Values.global.customCertificates.certificateSecretName .Values.pipelines.customCertificates.certificateSecretName }}
-      {{- end }}
-      {{- with .Values.pipelines.customVolumes }}
-      {{ tpl . $ | nindent 6 }}
       {{- end }}
       - name: jfrog-pipelines-folder
         emptyDir: {}

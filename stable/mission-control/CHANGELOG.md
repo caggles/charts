@@ -1,7 +1,20 @@
 # JFrog Mission-Control Chart Changelog
 All changes to this chart will be documented in this file.
 
-## [104.7.13] - Aug 25, 2021
+## [104.7.16] - Sep 20, 2021
+* Added missing security context in filebeat container
+* Update elasticsearch version to `7.14.1`
+* Added min kubeVersion ">= 1.14.0-0" in chart.yaml
+* Update alpine tag version to `3.14.2`
+* Update busybox tag version to `1.33.1`
+
+## [104.7.14] - Sep 02, 2021
+* Dropped NET_RAW capability for the containers
+* Added support for new probes(set to false by default)
+* Update elasticsearch version to `7.14.0`
+* Updated router version to `7.25.1`
+
+## [104.7.12] - Aug 25, 2021
 * Added security hardening fixes
 * Update router version to `7.24.1`
 * Update elasticsearch version to `7.13.4`
@@ -10,6 +23,7 @@ All changes to this chart will be documented in this file.
 * Added support for serviceRegistry insecure flag in router
 * Fixed duplicate resources Key violates YAML spec
 * Added elasticsearch default java opts to `2g`
+* Added support for new probes(set to false by default)
 
 ## [104.7.11] - July 22, 2021
 * Added support for graceful shutdown of router container on SIGTERM
