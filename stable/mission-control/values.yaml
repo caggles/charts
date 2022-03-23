@@ -483,6 +483,10 @@ missionControl:
   osType: "NA"
   osDist: "NA"
 
+  ## By default, the Mission Control StatefulSet is created with a securityContext that sets the `runAsUser` and the `fsGroup` to the `missionControl.uid` value.
+  ## If you want to disable the securityContext for the Mission Control StatefulSet, set this tag to false
+  setSecurityContext: true
+
   systemYaml: |
     router:
       topology:

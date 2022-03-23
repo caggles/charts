@@ -129,6 +129,10 @@ xray:
     type: "soft"
     topologyKey: "kubernetes.io/hostname"
 
+  ## By default, the Xray StatefulSet is created with a securityContext that sets the `runAsUser` and the `fsGroup` to the `xray.uid` value.
+  ## If you want to disable the securityContext for the Xray StatefulSet, set this tag to false
+  setSecurityContext: true
+
   systemYaml: |
     configVersion: 1
     router:
