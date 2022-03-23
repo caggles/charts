@@ -47,8 +47,10 @@ spec:
     {{- if or .Values.imagePullSecrets .Values.global.imagePullSecrets }}
 {{- include "mission-control.imagePullSecrets" . | indent 6 }}
     {{- end }}
+      {{- if .Values.missionControl.setSecurityContext }}
       securityContext:
         fsGroup: {{ .Values.common.uid }}
+      {{- end }}
       initContainers:
     {{- if or .Values.common.customInitContainersBegin .Values.global.customInitContainersBegin }}
 {{ tpl (include "mission-control.customInitContainersBegin" .)  . | indent 6 }}
@@ -57,8 +59,10 @@ spec:
     {{- if .Values.elasticsearch.configureDockerHost }}
       - name: elasticsearch-init
         image: "{{ .Values.elasticsearch.initContainerImage }}"
+        {{- if .Values.missionControl.setSecurityContext }}
         securityContext:
           privileged: true
+        {{- end }}
         command:
         - '/bin/sh'
         - '-c'
@@ -70,6 +74,7 @@ spec:
     {{- end }}
       - name: copy-system-yaml
         image: '{{ .Values.initContainerImage }}'
+        {{- if .Values.missionControl.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.uid }}
@@ -77,6 +82,7 @@ spec:
           capabilities:
             drop:
               - NET_RAW
+        {{- end }}
         command:
         - '/bin/sh'
         - '-c'
@@ -139,6 +145,7 @@ spec:
       {{- if or .Values.missionControl.customCertificates.enabled .Values.global.customCertificates.enabled }}
       - name: copy-custom-certificates
         image: "{{ .Values.initContainerImage }}"
+        {{- if .Values.missionControl.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.uid }}
@@ -146,6 +153,7 @@ spec:
           capabilities:
             drop:
               - NET_RAW
+        {{- end }}
         resources:
 {{ toYaml .Values.initContainers.resources | indent 10 }}
         command:
@@ -162,6 +170,7 @@ spec:
       {{- if or .Values.postgresql.enabled ( and .Values.database.host .Values.database.port ) }}
       - name: wait-for-db
         image: "{{ .Values.initContainerImage }}"
+        {{- if .Values.missionControl.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.uid }}
@@ -169,6 +178,7 @@ spec:
           capabilities:
             drop:
               - NET_RAW
+        {{- end }}
         command:
         - 'sh'
         - '-c'
@@ -190,11 +200,13 @@ spec:
     {{- if .Values.postgresql.enabled }}
       - name: postgresql-setup
         image: "{{ .Values.dbSetup.postgresql.image.repository }}:{{ .Values.dbSetup.postgresql.image.tag }}"
+        {{- if .Values.missionControl.setSecurityContext }}
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
               - NET_RAW
+        {{- end }}
         env:
         - name: DB_PORT
           value: '{{ .Values.postgresql.service.port }}'
@@ -260,6 +272,7 @@ spec:
       - name: {{ .Values.elasticsearch.name }}
         image: {{ include "mission-control.getImageInfoByValue" (list . "elasticsearch") }}
         imagePullPolicy: {{ .Values.elasticsearch.imagePullPolicy }}
+        {{- if .Values.missionControl.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           runAsUser: {{ .Values.elasticsearch.uid }}
@@ -267,6 +280,7 @@ spec:
           capabilities:
             drop:
               - NET_RAW
+        {{- end }}
         command:
         - '/bin/sh'
         - '-c'
@@ -357,6 +371,7 @@ spec:
       - name: {{ .Values.router.name }}
         image: {{ include "mission-control.getImageInfoByValue" (list . "router") }}
         imagePullPolicy: {{ .Values.router.image.imagePullPolicy }}
+        {{- if .Values.missionControl.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.uid }}
@@ -364,6 +379,7 @@ spec:
           capabilities:
             drop:
               - NET_RAW
+        {{- end }}
         command:
         - '/bin/sh'
         - '-c'
@@ -395,6 +411,7 @@ spec:
       - name: {{ .Values.missionControl.name }}
         image: {{ include "mission-control.getImageInfoByValue" (list . "missionControl") }}
         imagePullPolicy: {{ .Values.imagePullPolicy }}
+        {{- if .Values.missionControl.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.uid }}
@@ -402,6 +419,7 @@ spec:
           capabilities:
             drop:
               - NET_RAW
+        {{- end }}
         command:
         - '/bin/bash'
         - '-c'
@@ -476,6 +494,7 @@ spec:
       - name: {{ .Values.filebeat.name }}
         image: "{{ .Values.filebeat.image.repository }}:{{ .Values.filebeat.image.version }}"
         imagePullPolicy: {{ .Values.filebeat.image.pullPolicy }}
+        {{- if .Values.missionControl.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.uid }}
@@ -483,6 +502,7 @@ spec:
           capabilities:
             drop:
               - NET_RAW
+        {{- end }}
         args:
         - "-e"
         - "-E"
@@ -505,6 +525,7 @@ spec:
       - name: {{ .Values.insightServer.name }}
         image: {{ include "mission-control.getImageInfoByValue" (list . "insightServer") }}
         imagePullPolicy: {{ .Values.imagePullPolicy }}
+        {{- if .Values.missionControl.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.uid }}
@@ -512,6 +533,7 @@ spec:
           capabilities:
             drop:
               - NET_RAW
+        {{- end }}
         env:
         {{- if or .Values.database.secrets.user .Values.database.user }}
         - name: JF_SHARED_DATABASE_USERNAME
@@ -576,6 +598,7 @@ spec:
       - name: {{ .Values.insightScheduler.name }}
         image: {{ include "mission-control.getImageInfoByValue" (list . "insightScheduler") }}
         imagePullPolicy: {{ .Values.imagePullPolicy }}
+        {{- if .Values.missionControl.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.uid }}
@@ -583,6 +606,7 @@ spec:
           capabilities:
             drop:
               - NET_RAW
+        {{- end }}
         env:
         - name: JFMC_EXTRA_JAVA_OPTS
           value: "
@@ -666,6 +690,7 @@ spec:
       {{- range .Values.missionControl.loggers }}
       - name: {{ $name }}-{{ . | replace "_" "-" | replace "." "-" }}
         image: {{ include "mission-control.getImageInfoByValue" (list $ "logger") }}
+        {{- if .Values.missionControl.setSecurityContext }}
         securityContext:
           runAsUser: {{ $uid }}
           runAsNonRoot: true
@@ -673,6 +698,7 @@ spec:
           capabilities:
             drop:
               - NET_RAW
+        {{- end}}
         command:
           - tail
         args:
@@ -690,6 +716,7 @@ spec:
       {{- range .Values.insightServer.loggers }}
       - name: {{ $name }}-{{ . | replace "_" "-" | replace "." "-" }}
         image: {{ include "mission-control.getImageInfoByValue" (list $ "logger") }}
+        {{- if .Values.missionControl.setSecurityContext }}
         securityContext:
           runAsUser: {{ $uid }}
           runAsNonRoot: true
@@ -697,6 +724,7 @@ spec:
           capabilities:
             drop:
               - NET_RAW
+        {{- end }}
         command:
           - tail
         args:
@@ -714,6 +742,7 @@ spec:
       {{- range .Values.insightScheduler.loggers }}
       - name: {{ $name }}-{{ . | replace "_" "-" | replace "." "-" }}
         image: {{ include "mission-control.getImageInfoByValue" (list $ "logger") }}
+        {{- if .Values.missionControl.setSecurityContext }}
         securityContext:
           runAsUser: {{ $uid }}
           runAsNonRoot: true
@@ -721,6 +750,7 @@ spec:
           capabilities:
             drop:
               - NET_RAW
+        {{- end }}
         command:
           - tail
         args:
