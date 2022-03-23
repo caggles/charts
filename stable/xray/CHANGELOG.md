@@ -1,7 +1,75 @@
 # JFrog Xray Chart Changelog
 All changes to this chart will be documented in this file.
 
-## [103.32.2] - Aug 13, 2021
+## [103.44.1] - Feb 15, 2022
+* Updated router version to `7.32.1`
+* Updated Observability version to `1.3.0`
+* Added support loggers sidecars to tail a configured log
+* Added silent option for curl probes
+
+## [103.42.0] - Feb 12, 2022
+* Corrected the NetworkPolicy podSelector for RabbitMQ and Postgres
+* Option to skip wait-for-db init container with '--set waitForDatabase=false'
+* Added support for PriorityClass
+* Updated Observability version to `1.2.3`
+
+## [103.41.0] - Feb 12, 2022
+* Add more user friendly support for pod affinity and anti-affinity
+* Pod anti-affinity is now enabled by default (soft rule)
+* Added `ResourceQuota` and permissions for xray execution service
+* Added support for custom pod annotations using `xray.annotations`
+* Added support for setting `fsGroupChangePolicy`
+* Add job permissions to use by execution service
+* Updated Observability version to `1.2.2`
+* Updated router version to `7.30.0`
+* Sets the AES key used by execution server to the xray server and analysis containers
+* Fix regression in affinity path and revert it to its previous path
+
+## [103.40.0] - Dec 23, 2021
+* Refactored `database-creds` secret to create only when database values are passed
+* Refactored probes to replace httpGet probes with basic exec + curl
+* Added new endpoints for probes `/api/v1/system/liveness` and `/api/v1/system/readiness`
+* Enabled `newProbes:true` by default to use these endpoints
+* Updated Observability version to `1.2.0
+* Fix filebeat sidecar spool file permissions
+* Added `extraSecretsPrependReleaseName` to load-definitions secret in rabbitmq subchart
+* Updated filebeat sidecar container to `7.16.2`
+
+## [103.39.0] - Dec 17, 2021
+* Added `server.mailServer` and `server.indexAllBuilds` as optional fields
+* Added support for HorizontalPodAutoscaler apiVersion `autoscaling/v2beta2`
+* Update postgresql tag version to `13.4.0-debian-10-r39`
+* Refactored `router.requiredServiceTypes` to support platform chart
+
+## [103.37.0] - Nov 26, 2021
+* Fixed incorrect permission for filebeat.yaml [GH-1521](https://github.com/jfrog/charts/issues/1521)
+* Moved router.topology.local.requireqservicetypes from system.yaml to router as environment variable 
+* Updated initContainerImage to `jfrog/ubi-minimal:8.5-204`
+* Updated Observability version to `1.1.4`
+* Updated router version to `7.28.2`
+
+## [103.36.0] - Nov 11, 2021
+* Added Observability service
+
+## [103.35.0] - Oct 14, 2021
+* Added default values cpu and memeory in initContainers
+* Updated router version to `7.26.0`
+* Updated (`rbac.create` and `serviceAccount.create` to false by default) for least privileges
+* Fixed incorrect data type for `Values.router.serviceRegistry.insecure` in default values.yaml [GH-1514](https://github.com/jfrog/charts/pull/1514/files)
+* **IMPORTANT**
+* Changed init-container images from `alpine` to `ubi8/ubi-minimal`
+* Fixed incorrect data type for `Values.router.serviceRegistry.insecure` in default values.yaml [GH-1514](https://github.com/jfrog/charts/pull/1514/files)
+
+## [103.34.0] - Sep 20, 2021
+* Added min kubeVersion ">= 1.14.0-0" in chart.yaml
+* Update alpine tag version to `3.14.2`
+
+## [103.32.3] - Sep 08, 2021
+* Dropped NET_RAW capability for the containers
+* Added support for new probes(set to false by default)
+* Updated router version to `7.25.1`
+
+## [103.30.0] - Aug 13, 2021
 * Update router version to `7.24.1`
 * Support global and product specific tags at the same time
 * Updated readme of chart to point to wiki. Refer [Installing Xray](https://www.jfrog.com/confluence/display/JFROG/Installing+Xray)

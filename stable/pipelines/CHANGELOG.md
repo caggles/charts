@@ -1,11 +1,60 @@
 # JFrog Pipelines Chart Changelog
 All changes to this chart to be documented in this file.
 
-## [101.17.8] - Aug 11, 2021
-* Support global and product specific tags at the same time
-* Updated readme of chart to point to wiki. Refer [Installing Pipelines](https://www.jfrog.com/confluence/display/JFROG/Installing+Pipelines#InstallingPipelines-HelmInstallation)
+## [101.21.5] - Feb 21, 2022
+* Add support custom labels using `pipelines.labels`
+* Added support for HorizontalPodAutoscaler apiVersion `autoscaling/v2beta2`
+* Added metrics framework logging config and config to stream logs to stdout
+* Update postgresql tag version to `13.4.0-debian-10-r39`
+* Refactored `router.requiredServiceTypes` to support platform chart
+* Added support for custom pod annotations using `pipelines.annotations`
+* Bugfix - joinkey as a secret with joinKeySecretName
+
+## [101.20.0] - Dec 14, 2021
+* Add support for Ingress Class Name in Ingress Spec [GH-1516](https://github.com/jfrog/charts/pull/1516)
+* Fixed chart values to use curl instead of wget [GH-1529](https://github.com/jfrog/charts/issues/1529)
+* Add installer logs to shared logs volume
+* Moved router.topology.local.requireqservicetypes from system.yaml to router as environment variable
+* Aligned router configuration in system.yaml
+* Fixed `global.joinKeySecretName` usage
+* Update Vault tag version to `1.8.6`
+* Removed `jfpipwww` as a router required service
+
+## [101.19.0] - Nov 18, 2021
+* update system yaml with newer LTS build images 
+* **Breaking change**
+* Aligned probe structure (moved probes variables under config block)
+* Added support for new probes(set to false by default)
+* Aligned the redis pod to use explicit service account
+* Dropped NET_RAW capability for pipelines-installer
+* Removing www ingress which has to be aligned with pipelines > 1.18.0
+* **IMPORTANT**
+* Hashicorp Vault chart replaces internal Vault
+* Passing PIPELINES_NODE_ID to each pipelines microservice
+* Added support for Ingress networking.k8s.io/v1/Ingress for k8s >=1.22 [GH-1487](https://github.com/jfrog/charts/pull/1487)
+* Added support for postgresql external url
+* Added min kubeVersion ">= 1.14.0-0" in chart.yaml
+* Update alpine tag version to `3.14.2`
+* Moving required local services config from env to systemyaml
+* Added default values cpu and memeory in initContainers
+* Added jfconnect feature flag(set to false by default)
+* Remove rabbitmq ingress support.
+* Perform base64 encoding for postgreqsql external url
+* Added `serviceAccount.create` to toggle creation of service accounts
+* Updated (`rbac.create` and `serviceAccount.create` to false by default) for least privileges
+* Fixed incorrect data type for `Values.router.serviceRegistry.insecure` in default values.yaml [GH-1514](https://github.com/jfrog/charts/pull/1514/files)
+* Added piplines logs configuration
+
+## [101.18.0] - Aug 10, 2021
+* Added security hardening fixes
 * Added support for configuring postgresql connection pool
 * Added support for insecure registry url for router
+* Added support for newRelic
+* Enabled startup probes for k8s >= 1.20.x
+
+## [101.17.0] - July 27, 2021
+* Support global and product specific tags at the same time
+* Updated readme of chart to point to wiki. Refer [Installing Pipelines](https://www.jfrog.com/confluence/display/JFROG/Installing+Pipelines#InstallingPipelines-HelmInstallation)
 
 ## [101.16.1] - July 1, 2021
 * Increase stepTimeoutMS limit

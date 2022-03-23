@@ -1,7 +1,68 @@
 # JFrog Distribution Chart Changelog
 All changes to this project chart be documented in this file.
 
-## [102.9.2] - June 22, 2021
+## [102.12.1] - Feb 08, 2022
+* Refactored `database-creds` secret to create only when database values are passed
+* Refactored probes to replace httpGet probes with basic exec + curl
+* Added new endpoints for probes `/api/v1/system/liveness` and `/api/v1/system/readiness`
+* Enabled `newProbes:true` by default to use these endpoints
+* Fix filebeat sidecar spool file permissions
+* Updated filebeat sidecar container to `7.16.2`
+* Add more user friendly support for pod affinity and anti-affinity
+* Pod anti-affinity is now enabled by default (soft rule)
+* Added support for custom pod annotations using `distribution.annotations`
+* Updated NOTES.txt to fix improper warnings
+* Added support for setting `fsGroupChangePolicy`
+* Option to skip wait-for-db init container with '--set waitForDatabase=false'
+* Added support for PriorityClass
+* Added support to disable persistence for redis data
+* Updated Observability version to `1.2.3`
+* Updated router version to `7.32.1`
+
+## [102.11.0] - Dec 17, 2021
+* Updated (`rbac.create` and `serviceAccount.create` to false by default) for least privileges
+* Fixed incorrect data type for `Values.router.serviceRegistry.insecure` in default values.yaml [GH-1514](https://github.com/jfrog/charts/pull/1514/files)
+* **IMPORTANT**
+* Fixed chart values to use curl instead of wget [GH-1529](https://github.com/jfrog/charts/issues/1529)
+* Fixed incorrect permission for filebeat.yaml
+* Moved router.topology.local.requireqservicetypes from system.yaml to router as environment variable
+* Updated initContainerImage to `jfrog/ubi-minimal:8.5-204`
+* Update redis version tag to `6.2.6-debian-10-r43`
+* Added Observability service
+* Add support custom labels using `distribution.labels`
+* Updated router version to `7.28.2`
+* Update postgresql tag version to `13.4.0-debian-10-r39`
+* Refactored `router.requiredServiceTypes` to support platform chart
+
+## [102.10.0] - Sep 24, 2021
+* Updated readme of chart to point to wiki. Refer [Installing Distribution](https://www.jfrog.com/confluence/display/JFROG/Installing+Distribution)
+* Added security hardening fixes
+* Enabled startup probes for k8s >= 1.20.x
+* Changed network policy to allow all ingress and egress traffic
+* Added support for serviceRegistry insecure flag in router
+* Dropped NET_RAW capability for the containers
+* Added support for new probes(set to false by default)
+* Updated router version to `7.25.1`
+* Added min kubeVersion ">= 1.14.0-0" in chart.yaml
+* Update alpine tag version to `3.14.2`
+* Update busybox tag version to `1.33.1`
+* Added default values cpu and memeory in initContainers
+
+## [102.9.0] - Aug 2, 2021
+* Added support for `common.preStartCommand`
+* Added support for graceful shutdown of router container on SIGTERM
+* Update router version to `7.21.5`
+* Support global and product specific tags at the same time
+
+## [102.8.3] - July 13, 2021
+* Add support for custom secrets
+
+## [102.8.2] - July 6, 2021
+* Update router version to `7.21.3`
+* Update alpine tag version to `3.14.0`
+* Add required services for router container in systemYaml
+
+## [102.8.1] - June 22, 2021
 * Bumping chart version to align with app version
 * **Breaking change:**
 * Update postgresql tag version to `13.2.0-debian-10-r55`
