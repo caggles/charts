@@ -88,12 +88,14 @@ spec:
     {{- end }}
       - name: 'copy-system-yaml'
         image: '{{ .Values.initContainerImage }}'
+        {{- if .Values.xray.setSecurityContext }}
         securityContext:
           runAsNonRoot: true
           allowPrivilegeEscalation: false
           capabilities:
             drop:
               - NET_RAW
+        {{- end }}
         resources:
 {{ toYaml .Values.initContainers.resources | indent 10 }}
         command:
@@ -210,13 +212,10 @@ spec:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.xrayUserId }}
           allowPrivilegeEscalation: false
-<<<<<<< HEAD
-        {{- end }}
-=======
           capabilities:
             drop:
               - NET_RAW
->>>>>>> 5d31b82c3b3efaca449b38a9a253814a386042d9
+        {{- end }}
         command:
           - '/bin/sh'
           - '-c'
@@ -294,13 +293,10 @@ spec:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.xrayUserId }}
           allowPrivilegeEscalation: false
-<<<<<<< HEAD
-        {{- end }}
-=======
           capabilities:
             drop:
               - NET_RAW
->>>>>>> 5d31b82c3b3efaca449b38a9a253814a386042d9
+        {{- end }}
         command:
           - '/bin/bash'
           - '-c'
@@ -429,13 +425,10 @@ spec:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.xrayUserId }}
           allowPrivilegeEscalation: false
-<<<<<<< HEAD
-          {{- end }}
-=======
           capabilities:
             drop:
               - NET_RAW
->>>>>>> 5d31b82c3b3efaca449b38a9a253814a386042d9
+        {{- end }}
         command:
           - '/bin/bash'
           - '-c'
@@ -570,13 +563,10 @@ spec:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.xrayUserId }}
           allowPrivilegeEscalation: false
-<<<<<<< HEAD
-        {{- end }}
-=======
           capabilities:
             drop:
               - NET_RAW
->>>>>>> 5d31b82c3b3efaca449b38a9a253814a386042d9
+        {{- end }}
         command:
           - '/bin/bash'
           - '-c'
@@ -706,13 +696,10 @@ spec:
           runAsNonRoot: true
           runAsUser: {{ .Values.common.xrayUserId }}
           allowPrivilegeEscalation: false
-<<<<<<< HEAD
-        {{- end }}
-=======
           capabilities:
             drop:
               - NET_RAW
->>>>>>> 5d31b82c3b3efaca449b38a9a253814a386042d9
+        {{- end }}
         command:
           - '/bin/bash'
           - '-c'
